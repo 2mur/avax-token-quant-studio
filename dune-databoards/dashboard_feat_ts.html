@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOP // FEATURE TERMINAL // NOCHILL-WAVAX</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18, ReactDOM, PropTypes, Recharts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX compilation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.4/babel.min.js"></script>
+
+  <style>
+    body {
+      background-color: #1e2418;
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace, ui-monospace;
+      overflow-x: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    .scanlines {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      pointer-events: none;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.28) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.02),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.02)
+      );
+      background-size: 100% 3px, 6px 100%;
+      z-index: 9999;
+      opacity: 0.65;
+    }
+    .glow-box {
+      background-color: rgba(20, 24, 16, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(164, 181, 150, 0.3);
+      box-shadow: 0 0 15px rgba(164, 181, 150, 0.04);
+      border-radius: 0px !important;
+    }
+    .glow-box:hover {
+      border-color: rgba(164, 181, 150, 0.6);
+      box-shadow: 0 0 20px rgba(164, 181, 150, 0.1);
+    }
+    .sop-btn {
+      background-color: rgba(20, 24, 16, 0.85);
+      border: 1px solid rgba(164, 181, 150, 0.35);
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-radius: 0px;
+      transition: all 0.15s ease-in-out;
+    }
+    .sop-btn:hover {
+      background-color: rgba(164, 181, 150, 0.15);
+      border-color: #d1e0c5;
+      color: #d1e0c5;
+    }
+    .sop-btn-active {
+      background-color: rgba(164, 181, 150, 0.25) !important;
+      border-color: #d1e0c5 !important;
+      color: #d1e0c5 !important;
+      box-shadow: inset 0 0 8px rgba(209, 224, 197, 0.25);
+    }
+    .cursor-blink {
+      animation: blink 1s step-start infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #141810;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(164, 181, 150, 0.35);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a4b596;
+    }
+  </style>
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    const {
+      ResponsiveContainer, ComposedChart, LineChart, BarChart, AreaChart,
+      Line, Bar, Area, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
+      ReferenceLine
+    } = window.Recharts;
+
+    const DUNE_ID = 4834833;
+    const PERIODS = ["3d", "7d", "14d", "30d", "60d"];
+
+    function FeatureDashboardApp() {
+      const [rawData, setRawData] = useState([]);
+      const [metadata, setMetadata] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      // Panel 1: Valuation
+      const [priceScale, setPriceScale] = useState("LINEAR"); // LINEAR or LOG
+      const [valPeriod, setValPeriod] = useState("14d");
+      const [showMA, setShowMA] = useState(true);
+      const [showBB, setShowBB] = useState(true);
+
+      // Panel 2: RSI
+      const [rsiPeriod, setRsiPeriod] = useState("14d");
+      const [rsiMode, setRsiMode] = useState("BASE"); // BASE or VEL
+
+      // Panel 3: Stochastic
+      const [stochPeriod, setStochPeriod] = useState("14d");
+      const [stochMode, setStochMode] = useState("BASE"); // BASE or VEL
+
+      // Panel 4: ROC
+      const [rocPeriod, setRocPeriod] = useState("14d");
+      const [rocMode, setRocMode] = useState("BASE"); // BASE or VEL
+
+      // Panel 5: Network Volume
+      const [volMetric, setVolMetric] = useState("TX"); // TX, USERS, NET TOK, SOLD
+      const [volMode, setVolMode] = useState("BASE"); // BASE or VEL
+
+      useEffect(() => {
+        setLoading(true);
+        fetch(`dashboard_features_${DUNE_ID}.json`)
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status} loading features JSON`);
+            return res.json();
+          })
+          .then((payload) => {
+            setMetadata(payload.metadata || {});
+            // Filter last 200 rows as specified
+            const allRows = payload.data || [];
+            const sliceRows = allRows.slice(-200);
+            setRawData(sliceRows);
+            setLoading(false);
+          })
+          .catch((err) => {
+            console.error("Features load error:", err);
+            setError(err.message);
+            setLoading(false);
+          });
+      }, []);
+
+      // Format Active Volume Key
+      const currentVolKey = useMemo(() => {
+        let base = "tx_count";
+        if (volMetric === "USERS") base = "active_users";
+        else if (volMetric === "NET TOK") base = "net_tokens";
+        else if (volMetric === "SOLD") base = "transfer_tokens_sold";
+        return volMode === "VEL" ? `${base}_v` : base;
+      }, [volMetric, volMode]);
+
+      // Format RSI Key
+      const currentRsiKey = useMemo(() => {
+        return rsiMode === "VEL" ? `rsi_${rsiPeriod}_v` : `rsi_${rsiPeriod}`;
+      }, [rsiPeriod, rsiMode]);
+
+      // Format Stoch Key
+      const currentStochKey = useMemo(() => {
+        return stochMode === "VEL" ? `stoch_${stochPeriod}_v` : `stoch_${stochPeriod}`;
+      }, [stochPeriod, stochMode]);
+
+      // Format ROC Key
+      const currentRocKey = useMemo(() => {
+        return rocMode === "VEL" ? `roc_${rocPeriod}_v` : `roc_${rocPeriod}`;
+      }, [rocPeriod, rocMode]);
+
+      return (
+        <div className="min-h-screen bg-[#1e2418] text-[#a4b596] p-4 flex flex-col justify-between">
+          <div>
+            {/* Header Bar */}
+            <div className="glow-box p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <span className="inline-block w-3 h-3 bg-[#76c893] shadow-[0_0_8px_#76c893]"></span>
+                <span className="text-[#d1e0c5] font-bold tracking-wider text-sm md:text-base">
+                  SOP // FEATURE TERMINAL // NOCHILL-WAVAX [DUNE: {DUNE_ID}]
+                </span>
+                <span className="text-xs text-[#a4b596]/60 border border-[#a4b596]/30 px-2 py-0.5">
+                  RESOLUTION: 12H (LAST 200 CYCLES)
+                </span>
+              </div>
+
+              {/* Navigation Links */}
+              <div className="flex items-center space-x-2 text-xs">
+                <span className="text-[#a4b596]/50">TERMINALS:</span>
+                <a href="dashboard.html" className="sop-btn px-2.5 py-1 text-xs">
+                  PERFORMANCE
+                </a>
+                <a href="dashboard_feat_ts.html" className="sop-btn sop-btn-active px-2.5 py-1 text-xs">
+                  FEATURES TS
+                </a>
+                <a href="dashboard_eda.html" className="sop-btn px-2.5 py-1 text-xs">
+                  EDA ENGINE
+                </a>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="glow-box p-12 text-center text-sm tracking-widest text-[#d1e0c5]">
+                STREAMING 12H MULTI-TIMEFRAME FEATURES FOR NOCHILL...
+              </div>
+            ) : error ? (
+              <div className="glow-box p-8 text-center text-sm text-[#f87171]">
+                DATA ACQUISITION ERROR: {error}
+              </div>
+            ) : (
+              /* 6-Panel Responsive Grid */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 1. Asset Valuation Panel */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">1. ASSET VALUATION</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">
+                        {priceScale} | MA & BB ({valPeriod.toUpperCase()})
+                      </span>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <button
+                        onClick={() => setPriceScale("LINEAR")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${priceScale === "LINEAR" ? "sop-btn-active" : ""}`}
+                      >
+                        LINEAR
+                      </button>
+                      <button
+                        onClick={() => setPriceScale("LOG")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${priceScale === "LOG" ? "sop-btn-active" : ""}`}
+                      >
+                        LOG
+                      </button>
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      {PERIODS.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setValPeriod(p)}
+                          className={`sop-btn px-1.5 py-0.5 text-[9px] ${valPeriod === p ? "sop-btn-active" : ""}`}
+                        >
+                          {p.toUpperCase()}
+                        </button>
+                      ))}
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      <button
+                        onClick={() => setShowMA(!showMA)}
+                        className={`sop-btn px-1.5 py-0.5 text-[9px] ${showMA ? "sop-btn-active" : ""}`}
+                      >
+                        MA
+                      </button>
+                      <button
+                        onClick={() => setShowBB(!showBB)}
+                        className={`sop-btn px-1.5 py-0.5 text-[9px] ${showBB ? "sop-btn-active" : ""}`}
+                      >
+                        BB
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                          domain={['auto', 'auto']}
+                          tickFormatter={(v) => priceScale === "LOG" ? v.toFixed(2) : `$${v.toFixed(4)}`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey={priceScale === "LOG" ? "log_price" : "price"}
+                          name={priceScale === "LOG" ? "Log Price" : "Price"}
+                          stroke="#d1e0c5"
+                          strokeWidth={1.8}
+                          dot={false}
+                        />
+                        {showMA && (
+                          <Line
+                            type="monotone"
+                            dataKey={`ma_${valPeriod}`}
+                            name={`MA ${valPeriod}`}
+                            stroke="#85b09a"
+                            strokeWidth={1.2}
+                            dot={false}
+                          />
+                        )}
+                        {showBB && (
+                          <>
+                            <Line
+                              type="monotone"
+                              dataKey={`bb_up_${valPeriod}`}
+                              name={`BB Up ${valPeriod}`}
+                              stroke="#76c893"
+                              strokeDasharray="2 2"
+                              strokeWidth={1}
+                              dot={false}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey={`bb_low_${valPeriod}`}
+                              name={`BB Low ${valPeriod}`}
+                              stroke="#f87171"
+                              strokeDasharray="2 2"
+                              strokeWidth={1}
+                              dot={false}
+                            />
+                          </>
+                        )}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 2. RSI Panel */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">2. RELATIVE STRENGTH INDEX</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">{currentRsiKey}</span>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <button
+                        onClick={() => setRsiMode("BASE")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${rsiMode === "BASE" ? "sop-btn-active" : ""}`}
+                      >
+                        BASE
+                      </button>
+                      <button
+                        onClick={() => setRsiMode("VEL")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${rsiMode === "VEL" ? "sop-btn-active" : ""}`}
+                      >
+                        VELOCITY (SMA)
+                      </button>
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      {PERIODS.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setRsiPeriod(p)}
+                          className={`sop-btn px-1.5 py-0.5 text-[9px] ${rsiPeriod === p ? "sop-btn-active" : ""}`}
+                        >
+                          {p.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                          domain={rsiMode === "BASE" ? [0, 100] : ['auto', 'auto']}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        {rsiMode === "BASE" ? (
+                          <>
+                            <ReferenceLine y={70} stroke="#f87171" strokeDasharray="3 3" opacity={0.6} />
+                            <ReferenceLine y={30} stroke="#76c893" strokeDasharray="3 3" opacity={0.6} />
+                          </>
+                        ) : (
+                          <ReferenceLine y={0} stroke="#d1e0c5" strokeDasharray="3 3" opacity={0.5} />
+                        )}
+                        <Line
+                          type="monotone"
+                          dataKey={currentRsiKey}
+                          name={currentRsiKey}
+                          stroke="#76c893"
+                          strokeWidth={1.6}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 3. Stochastic (%K) Panel */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">3. STOCHASTIC OSCILLATOR (%K)</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">{currentStochKey}</span>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <button
+                        onClick={() => setStochMode("BASE")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${stochMode === "BASE" ? "sop-btn-active" : ""}`}
+                      >
+                        BASE
+                      </button>
+                      <button
+                        onClick={() => setStochMode("VEL")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${stochMode === "VEL" ? "sop-btn-active" : ""}`}
+                      >
+                        VEL
+                      </button>
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      {PERIODS.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setStochPeriod(p)}
+                          className={`sop-btn px-1.5 py-0.5 text-[9px] ${stochPeriod === p ? "sop-btn-active" : ""}`}
+                        >
+                          {p.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                          domain={stochMode === "BASE" ? [0, 100] : ['auto', 'auto']}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        {stochMode === "BASE" && (
+                          <>
+                            <ReferenceLine y={80} stroke="#f87171" strokeDasharray="3 3" opacity={0.6} />
+                            <ReferenceLine y={20} stroke="#76c893" strokeDasharray="3 3" opacity={0.6} />
+                          </>
+                        )}
+                        <Line
+                          type="monotone"
+                          dataKey={currentStochKey}
+                          name={currentStochKey}
+                          stroke="#d1e0c5"
+                          strokeWidth={1.5}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 4. Rate of Change (ROC) Panel */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">4. RATE OF CHANGE (ROC %)</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">{currentRocKey}</span>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <button
+                        onClick={() => setRocMode("BASE")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${rocMode === "BASE" ? "sop-btn-active" : ""}`}
+                      >
+                        BASE
+                      </button>
+                      <button
+                        onClick={() => setRocMode("VEL")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${rocMode === "VEL" ? "sop-btn-active" : ""}`}
+                      >
+                        VEL
+                      </button>
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      {PERIODS.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setRocPeriod(p)}
+                          className={`sop-btn px-1.5 py-0.5 text-[9px] ${rocPeriod === p ? "sop-btn-active" : ""}`}
+                        >
+                          {p.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                          domain={['auto', 'auto']}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <ReferenceLine y={0} stroke="#d1e0c5" strokeDasharray="3 3" opacity={0.5} />
+                        <Area
+                          type="monotone"
+                          dataKey={currentRocKey}
+                          name={currentRocKey}
+                          stroke="#85b09a"
+                          fill="rgba(133, 176, 154, 0.2)"
+                          strokeWidth={1.5}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 5. Network Volume Panel */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">5. ON-CHAIN NETWORK ACTIVITY</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">{currentVolKey}</span>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {["TX", "USERS", "NET TOK", "SOLD"].map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setVolMetric(m)}
+                          className={`sop-btn px-2 py-0.5 text-[9px] ${volMetric === m ? "sop-btn-active" : ""}`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                      <div className="w-px h-4 bg-[#a4b596]/20 mx-1"></div>
+                      <button
+                        onClick={() => setVolMode("BASE")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${volMode === "BASE" ? "sop-btn-active" : ""}`}
+                      >
+                        BASE
+                      </button>
+                      <button
+                        onClick={() => setVolMode("VEL")}
+                        className={`sop-btn px-2 py-0.5 text-[9px] ${volMode === "VEL" ? "sop-btn-active" : ""}`}
+                      >
+                        VEL (_V)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                          domain={['auto', 'auto']}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <Bar
+                          dataKey={currentVolKey}
+                          name={currentVolKey}
+                          fill="#76c893"
+                          opacity={0.8}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 6. Systemic Shock vs Target Horizon */}
+                <div className="glow-box p-3 flex flex-col justify-between h-[340px]">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">6. SYSTEMIC SHOCK VS FORWARD RETURN</span>
+                      <span className="text-[10px] text-[#a4b596]/70 font-mono">VOL_SHOCK × LOG_RETURN_12H</span>
+                    </div>
+
+                    <div className="flex items-center space-x-3 text-[10px] text-[#a4b596]/80 mb-2">
+                      <span className="flex items-center space-x-1">
+                        <span className="w-2.5 h-2.5 bg-[#85b09a]/80"></span>
+                        <span>VOL_SHOCK (BARS)</span>
+                      </span>
+                      <span className="flex items-center space-x-1">
+                        <span className="w-2.5 h-0.5 bg-[#d1e0c5]"></span>
+                        <span>LOG_FUT_RET_12H (STEP)</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ width: '100%', height: 230 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={rawData}>
+                        <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="time"
+                          tick={{ fill: '#a4b596', fontSize: 9 }}
+                          tickFormatter={(t) => t.slice(5, 10)}
+                          stroke="rgba(164, 181, 150, 0.2)"
+                        />
+                        <YAxis
+                          yAxisId="shockAxis"
+                          tick={{ fill: '#85b09a', fontSize: 9 }}
+                          stroke="rgba(133, 176, 154, 0.3)"
+                          domain={[0, 'auto']}
+                        />
+                        <YAxis
+                          yAxisId="retAxis"
+                          orientation="right"
+                          tick={{ fill: '#d1e0c5', fontSize: 9 }}
+                          stroke="rgba(209, 224, 197, 0.3)"
+                          domain={['auto', 'auto']}
+                          tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#141810',
+                            borderColor: 'rgba(164, 181, 150, 0.4)',
+                            fontSize: '10px'
+                          }}
+                        />
+                        <ReferenceLine yAxisId="shockAxis" y={1.0} stroke="#85b09a" strokeDasharray="2 2" opacity={0.5} />
+                        <ReferenceLine yAxisId="retAxis" y={0.0} stroke="#d1e0c5" strokeDasharray="2 2" opacity={0.5} />
+                        <Bar
+                          yAxisId="shockAxis"
+                          dataKey="vol_shock"
+                          name="Volume Shock"
+                          fill="#85b09a"
+                          opacity={0.5}
+                        />
+                        <Line
+                          yAxisId="retAxis"
+                          type="stepAfter"
+                          dataKey="log_future_return_12h"
+                          name="Log Future Return 12h"
+                          stroke="#d1e0c5"
+                          strokeWidth={1.8}
+                          dot={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SOP Footer */}
+          <div className="mt-6 pt-3 border-t border-[#a4b596]/30 flex flex-wrap items-center justify-between text-xs text-[#a4b596]/70">
+            <div>
+              SOP FEATURE STREAM // MULTI-HORIZON KERNELS // RECHARTS 2.12
+            </div>
+            <div className="font-bold text-[#d1e0c5]">
+              made by t <span className="cursor-blink">_</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<FeatureDashboardApp />);
+  </script>
+</body>
+</html>

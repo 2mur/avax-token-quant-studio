@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOP // PERFORMANCE TERMINAL // NOCHILL-WAVAX</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18, ReactDOM, PropTypes, Recharts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX compilation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.4/babel.min.js"></script>
+
+  <style>
+    body {
+      background-color: #1e2418;
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace, ui-monospace;
+      overflow-x: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    .scanlines {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      pointer-events: none;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.28) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.02),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.02)
+      );
+      background-size: 100% 3px, 6px 100%;
+      z-index: 9999;
+      opacity: 0.65;
+    }
+    .glow-box {
+      background-color: rgba(20, 24, 16, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(164, 181, 150, 0.3);
+      box-shadow: 0 0 15px rgba(164, 181, 150, 0.04);
+      border-radius: 0px !important;
+    }
+    .glow-box:hover {
+      border-color: rgba(164, 181, 150, 0.6);
+      box-shadow: 0 0 20px rgba(164, 181, 150, 0.1);
+    }
+    .sop-btn {
+      background-color: rgba(20, 24, 16, 0.85);
+      border: 1px solid rgba(164, 181, 150, 0.35);
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-radius: 0px;
+      transition: all 0.15s ease-in-out;
+    }
+    .sop-btn:hover {
+      background-color: rgba(164, 181, 150, 0.15);
+      border-color: #d1e0c5;
+      color: #d1e0c5;
+    }
+    .sop-btn-active {
+      background-color: rgba(164, 181, 150, 0.25) !important;
+      border-color: #d1e0c5 !important;
+      color: #d1e0c5 !important;
+      box-shadow: inset 0 0 8px rgba(209, 224, 197, 0.25);
+    }
+    .cursor-blink {
+      animation: blink 1s step-start infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #141810;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(164, 181, 150, 0.35);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a4b596;
+    }
+  </style>
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    const {
+      ResponsiveContainer, ComposedChart, LineChart, BarChart, AreaChart,
+      Line, Bar, Area, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
+      ReferenceLine, Brush, Dot
+    } = window.Recharts;
+
+    const DUNE_ID = 4834833;
+    const MODELS = ["XGBOOST", "LGBM", "ESN", "LSTM", "TRANSFORMER", "SEASONAL"];
+
+    // Custom Trade Cross Marker Component
+    const TradeCrossDot = (props) => {
+      const { cx, cy, payload } = props;
+      if (!payload || payload.action === "HOLD") return null;
+      const isBuy = payload.action === "BUY";
+      const color = isBuy ? "#76c893" : "#f87171";
+      const size = 6;
+      return (
+        <g>
+          <line x1={cx - size} y1={cy} x2={cx + size} y2={cy} stroke={color} strokeWidth={2.5} />
+          <line x1={cx} y1={cy - size} x2={cx} y2={cy + size} stroke={color} strokeWidth={2.5} />
+          <circle cx={cx} cy={cy} r={size + 2} stroke={color} strokeWidth={1} fill="none" opacity={0.6} />
+        </g>
+      );
+    };
+
+    function DashboardApp() {
+      const [selectedModel, setSelectedModel] = useState("XGBOOST");
+      const [selectedWindow, setSelectedWindow] = useState("window_1");
+      const [simData, setSimData] = useState(null);
+      const [availableWindows, setAvailableWindows] = useState(["window_1", "window_2", "window_3"]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      // Bottom Row Panel 1 State (Oscillators)
+      const [oscType, setOscType] = useState("RSI"); // RSI, STOCH, ROC
+      const [oscPeriod, setOscPeriod] = useState("14D"); // 3D, 7D, 14D, 30D, 60D
+
+      // Bottom Row Panel 2 State (On-Chain)
+      const [onChainMetric, setOnChainMetric] = useState("USERS"); // USERS, NET TOK, SOLD
+
+      // Bottom Row Panel 3 State (Macro)
+      const [macroMetric, setMacroMetric] = useState("SHOCK"); // SHOCK, NUPL_14D, NUPL_30D
+
+      // Fetch simulation payload when model changes
+      useEffect(() => {
+        setLoading(true);
+        setError(null);
+        const fileName = `${selectedModel.toLowerCase()}_simulation_${DUNE_ID}.json`;
+        fetch(fileName)
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status} loading ${fileName}`);
+            return res.json();
+          })
+          .then((data) => {
+            setSimData(data);
+            const wins = Object.keys(data);
+            setAvailableWindows(wins);
+            if (!wins.includes(selectedWindow)) {
+              setSelectedWindow(wins[0] || "window_1");
+            }
+            setLoading(false);
+          })
+          .catch((err) => {
+            console.error("Simulation load error:", err);
+            setError(err.message);
+            setLoading(false);
+          });
+      }, [selectedModel]);
+
+      const currentWindowData = useMemo(() => {
+        if (!simData || !simData[selectedWindow]) return null;
+        return simData[selectedWindow];
+      }, [simData, selectedWindow]);
+
+      const summary = currentWindowData?.summary || {
+        starting_balance: 10000,
+        final_balance: 10000,
+        pnl_pct: 0,
+        alpha_pct: 0,
+        total_trades: 0
+      };
+
+      const history = currentWindowData?.history || [];
+      const trades = currentWindowData?.trades || [];
+
+      // Format oscillator metric key
+      const currentOscKey = useMemo(() => {
+        const p = oscPeriod.toLowerCase();
+        if (oscType === "RSI") return `rsi_${p}`;
+        if (oscType === "STOCH") return `stoch_${p}`;
+        return `roc_${p}`;
+      }, [oscType, oscPeriod]);
+
+      // Format on-chain key
+      const currentOnChainKey = useMemo(() => {
+        if (onChainMetric === "USERS") return "active_users";
+        if (onChainMetric === "NET TOK") return "net_tokens";
+        return "transfer_tokens_sold";
+      }, [onChainMetric]);
+
+      // Format macro key
+      const currentMacroKey = useMemo(() => {
+        if (macroMetric === "SHOCK") return "vol_shock";
+        if (macroMetric === "NUPL_14D") return "nupl_14d";
+        return "nupl_30d";
+      }, [macroMetric]);
+
+      return (
+        <div className="min-h-screen bg-[#1e2418] text-[#a4b596] p-4 flex flex-col justify-between">
+          {/* Header Bar */}
+          <div>
+            <div className="glow-box p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <span className="inline-block w-3 h-3 bg-[#76c893] shadow-[0_0_8px_#76c893]"></span>
+                <span className="text-[#d1e0c5] font-bold tracking-wider text-sm md:text-base">
+                  SOP // PERFORMANCE TERMINAL // NOCHILL-WAVAX [DUNE: {DUNE_ID}]
+                </span>
+                <span className="text-xs text-[#a4b596]/60 border border-[#a4b596]/30 px-2 py-0.5">
+                  SYSTEM READY
+                </span>
+              </div>
+
+              {/* Navigation Links to Other Terminals */}
+              <div className="flex items-center space-x-2 text-xs">
+                <span className="text-[#a4b596]/50">TERMINALS:</span>
+                <a
+                  href="dashboard.html"
+                  className="sop-btn sop-btn-active px-2.5 py-1 text-xs"
+                >
+                  PERFORMANCE
+                </a>
+                <a
+                  href="dashboard_feat_ts.html"
+                  className="sop-btn px-2.5 py-1 text-xs"
+                >
+                  FEATURES TS
+                </a>
+                <a
+                  href="dashboard_eda.html"
+                  className="sop-btn px-2.5 py-1 text-xs"
+                >
+                  EDA ENGINE
+                </a>
+              </div>
+            </div>
+
+            {/* Model & Window Selectors */}
+            <div className="glow-box p-3 mb-4 flex flex-wrap items-center justify-between gap-4">
+              {/* Models */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-[#a4b596]/70 mr-2 font-bold tracking-wider">MODEL:</span>
+                {MODELS.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedModel(m)}
+                    className={`sop-btn px-3 py-1 text-xs font-semibold ${selectedModel === m ? "sop-btn-active" : ""}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              {/* Walk-Forward Windows */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-[#a4b596]/70 mr-2 font-bold tracking-wider">WINDOW:</span>
+                {availableWindows.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setSelectedWindow(w)}
+                    className={`sop-btn px-2.5 py-1 text-xs ${selectedWindow === w ? "sop-btn-active" : ""}`}
+                  >
+                    [{w.toUpperCase()}]
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 5 KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <div className="glow-box p-3">
+                <div className="text-[10px] text-[#a4b596]/70 uppercase tracking-widest">STARTING CAPITAL</div>
+                <div className="text-lg md:text-xl font-bold text-[#d1e0c5] mt-1">
+                  ${summary.starting_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-[#a4b596]/50 mt-0.5">BASE ALLOCATION</div>
+              </div>
+
+              <div className="glow-box p-3">
+                <div className="text-[10px] text-[#a4b596]/70 uppercase tracking-widest">AI PORTFOLIO</div>
+                <div className="text-lg md:text-xl font-bold text-[#d1e0c5] mt-1">
+                  ${summary.final_balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-[#a4b596]/50 mt-0.5">MARK-TO-MARKET</div>
+              </div>
+
+              <div className="glow-box p-3">
+                <div className="text-[10px] text-[#a4b596]/70 uppercase tracking-widest">TOTAL RETURN</div>
+                <div className={`text-lg md:text-xl font-bold mt-1 ${summary.pnl_pct >= 0 ? "text-[#76c893]" : "text-[#f87171]"}`}>
+                  {summary.pnl_pct >= 0 ? "+" : ""}{summary.pnl_pct.toFixed(2)}%
+                </div>
+                <div className="text-[10px] text-[#a4b596]/50 mt-0.5">NET PROFIT / LOSS</div>
+              </div>
+
+              <div className="glow-box p-3">
+                <div className="text-[10px] text-[#a4b596]/70 uppercase tracking-widest">ALPHA (VS HODL)</div>
+                <div className={`text-lg md:text-xl font-bold mt-1 ${summary.alpha_pct >= 0 ? "text-[#76c893]" : "text-[#f87171]"}`}>
+                  {summary.alpha_pct >= 0 ? "+" : ""}{summary.alpha_pct.toFixed(2)}%
+                </div>
+                <div className="text-[10px] text-[#a4b596]/50 mt-0.5">VS PASSIVE HOLD</div>
+              </div>
+
+              <div className="glow-box p-3 col-span-2 md:col-span-1">
+                <div className="text-[10px] text-[#a4b596]/70 uppercase tracking-widest">EXECUTIONS</div>
+                <div className="text-lg md:text-xl font-bold text-[#d1e0c5] mt-1">
+                  {summary.total_trades} TRADES
+                </div>
+                <div className="text-[10px] text-[#a4b596]/50 mt-0.5">BUY/SELL SIGNALS</div>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="glow-box p-12 text-center text-sm tracking-widest text-[#d1e0c5]">
+                INITIALIZING SOP TELEMETRY STREAM FOR {selectedModel}...
+              </div>
+            ) : error ? (
+              <div className="glow-box p-8 text-center text-sm text-[#f87171]">
+                TELEMETRY ERROR: {error}
+              </div>
+            ) : (
+              <div>
+                {/* Upper Row: Master Synchronized Chart + Execution Log */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-4">
+                  {/* Master Composed Chart (3 Cols) */}
+                  <div className="glow-box p-3 lg:col-span-3 flex flex-col justify-between">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs text-[#d1e0c5] font-bold tracking-wider">
+                        PORTFOLIO VALUE VS HODL BENCHMARK & PRICE
+                      </div>
+                      <div className="flex items-center space-x-4 text-[11px]">
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-0.5 bg-[#d1e0c5]"></span>
+                          <span>AI PORTFOLIO ($)</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-0.5 border-t border-dashed border-[#a4b596]"></span>
+                          <span>HODL BENCH ($)</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-0.5 bg-[#85b09a]"></span>
+                          <span>TOKEN PRICE ($)</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ width: '100%', height: 320 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={history} syncId="masterSync">
+                          <CartesianGrid stroke="rgba(164, 181, 150, 0.12)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="time"
+                            tick={{ fill: '#a4b596', fontSize: 10 }}
+                            tickFormatter={(t) => t.slice(5, 16)}
+                            stroke="rgba(164, 181, 150, 0.3)"
+                          />
+                          <YAxis
+                            yAxisId="valAxis"
+                            tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                            stroke="rgba(164, 181, 150, 0.3)"
+                            domain={['auto', 'auto']}
+                            tickFormatter={(v) => `$${v.toFixed(0)}`}
+                          />
+                          <YAxis
+                            yAxisId="priceAxis"
+                            orientation="right"
+                            tick={{ fill: '#85b09a', fontSize: 10 }}
+                            stroke="rgba(133, 176, 154, 0.3)"
+                            domain={['auto', 'auto']}
+                            tickFormatter={(p) => `$${p.toFixed(4)}`}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: 'rgba(20, 24, 16, 0.95)',
+                              borderColor: 'rgba(164, 181, 150, 0.4)',
+                              borderRadius: 0,
+                              fontSize: '11px',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          {/* AI Portfolio Line (StepAfter) */}
+                          <Line
+                            yAxisId="valAxis"
+                            type="stepAfter"
+                            dataKey="portfolio_value"
+                            name="Portfolio Value"
+                            stroke="#d1e0c5"
+                            strokeWidth={2}
+                            dot={<TradeCrossDot />}
+                          />
+                          {/* Benchmark Line (HODL) */}
+                          <Line
+                            yAxisId="valAxis"
+                            type="monotone"
+                            dataKey="benchmark_value"
+                            name="Benchmark HODL"
+                            stroke="#a4b596"
+                            strokeWidth={1.5}
+                            strokeDasharray="4 4"
+                            dot={false}
+                          />
+                          {/* Price Line */}
+                          <Line
+                            yAxisId="priceAxis"
+                            type="monotone"
+                            dataKey="price"
+                            name="Price"
+                            stroke="#85b09a"
+                            strokeWidth={1}
+                            opacity={0.65}
+                            dot={false}
+                          />
+                          <Brush
+                            dataKey="time"
+                            height={22}
+                            stroke="#a4b596"
+                            fill="#141810"
+                            tickFormatter={(t) => t.slice(11, 16)}
+                          />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Execution Log Table (1 Col) */}
+                  <div className="glow-box p-3 flex flex-col h-[375px]">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#a4b596]/30">
+                      <span className="text-xs text-[#d1e0c5] font-bold tracking-wider">EXECUTION LOG</span>
+                      <span className="text-[10px] text-[#a4b596]/70">{trades.length} SIGNALS</span>
+                    </div>
+
+                    <div className="overflow-y-auto flex-1 pr-1">
+                      {trades.length === 0 ? (
+                        <div className="text-xs text-[#a4b596]/50 p-4 text-center">NO TRADES IN THIS WINDOW</div>
+                      ) : (
+                        <table className="w-full text-[11px] text-left">
+                          <thead>
+                            <tr className="border-b border-[#a4b596]/20 text-[#a4b596]/60">
+                              <th className="pb-1">ACT</th>
+                              <th className="pb-1">PRICE</th>
+                              <th className="pb-1">USD</th>
+                              <th className="pb-1 text-right">CONF</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {trades.map((tr, idx) => (
+                              <tr
+                                key={idx}
+                                className="border-b border-[#a4b596]/10 hover:bg-[#a4b596]/10 transition-colors"
+                              >
+                                <td className="py-1">
+                                  <span
+                                    className={`font-bold px-1 py-0.2 text-[10px] ${
+                                      tr.type === "BUY"
+                                        ? "text-[#76c893] bg-[#76c893]/15"
+                                        : "text-[#f87171] bg-[#f87171]/15"
+                                    }`}
+                                  >
+                                    {tr.type}
+                                  </span>
+                                </td>
+                                <td className="py-1 font-mono">${tr.price.toFixed(4)}</td>
+                                <td className="py-1 font-mono">${tr.usd_value.toFixed(0)}</td>
+                                <td className="py-1 font-mono text-right text-[#d1e0c5]">{tr.conf}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Row: 3 Synchronized Feature Explorer Panels */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Panel 1: Oscillators */}
+                  <div className="glow-box p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">OSCILLATORS</span>
+                      <span className="text-[10px] text-[#a4b596]/60 font-mono">{currentOscKey}</span>
+                    </div>
+
+                    {/* Dual-Row Toggles */}
+                    <div className="space-y-1.5 mb-2">
+                      <div className="flex gap-1">
+                        {["RSI", "STOCH", "ROC"].map((typ) => (
+                          <button
+                            key={typ}
+                            onClick={() => setOscType(typ)}
+                            className={`sop-btn px-2 py-0.5 text-[10px] flex-1 ${oscType === typ ? "sop-btn-active" : ""}`}
+                          >
+                            {typ}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1">
+                        {["3D", "7D", "14D", "30D", "60D"].map((per) => (
+                          <button
+                            key={per}
+                            onClick={() => setOscPeriod(per)}
+                            className={`sop-btn px-1.5 py-0.5 text-[9px] flex-1 ${oscPeriod === per ? "sop-btn-active" : ""}`}
+                          >
+                            {per}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ width: '100%', height: 180 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={history} syncId="masterSync">
+                          <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="time"
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            tickFormatter={(t) => t.slice(11, 16)}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                          />
+                          <YAxis
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                            domain={oscType === "ROC" ? ['auto', 'auto'] : [0, 100]}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#141810',
+                              borderColor: 'rgba(164, 181, 150, 0.4)',
+                              fontSize: '10px'
+                            }}
+                          />
+                          {oscType !== "ROC" ? (
+                            <>
+                              <ReferenceLine y={70} stroke="#f87171" strokeDasharray="3 3" opacity={0.6} />
+                              <ReferenceLine y={30} stroke="#76c893" strokeDasharray="3 3" opacity={0.6} />
+                            </>
+                          ) : (
+                            <ReferenceLine y={0} stroke="#d1e0c5" strokeDasharray="3 3" opacity={0.5} />
+                          )}
+                          <Line
+                            type="monotone"
+                            dataKey={currentOscKey}
+                            stroke="#d1e0c5"
+                            strokeWidth={1.5}
+                            dot={<TradeCrossDot />}
+                          />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Panel 2: On-Chain Flow */}
+                  <div className="glow-box p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">ON-CHAIN METRICS</span>
+                      <span className="text-[10px] text-[#a4b596]/60 font-mono">{currentOnChainKey}</span>
+                    </div>
+
+                    {/* Metric Toggle */}
+                    <div className="flex gap-1 mb-3">
+                      {[
+                        { label: "USERS", key: "USERS" },
+                        { label: "NET TOK", key: "NET TOK" },
+                        { label: "SOLD", key: "SOLD" }
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          onClick={() => setOnChainMetric(item.key)}
+                          className={`sop-btn px-2 py-0.5 text-[10px] flex-1 ${onChainMetric === item.key ? "sop-btn-active" : ""}`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ width: '100%', height: 180 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={history} syncId="masterSync">
+                          <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="time"
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            tickFormatter={(t) => t.slice(11, 16)}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                          />
+                          <YAxis
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                            domain={['auto', 'auto']}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#141810',
+                              borderColor: 'rgba(164, 181, 150, 0.4)',
+                              fontSize: '10px'
+                            }}
+                          />
+                          <Bar
+                            dataKey={currentOnChainKey}
+                            fill="#85b09a"
+                            opacity={0.8}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Panel 3: Macro & NUPL */}
+                  <div className="glow-box p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-[#d1e0c5]">MACRO INDICATORS</span>
+                      <span className="text-[10px] text-[#a4b596]/60 font-mono">{currentMacroKey}</span>
+                    </div>
+
+                    {/* Metric Toggle */}
+                    <div className="flex gap-1 mb-3">
+                      {[
+                        { label: "SHOCK", key: "SHOCK" },
+                        { label: "NUPL 14D", key: "NUPL_14D" },
+                        { label: "NUPL 30D", key: "NUPL_30D" }
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          onClick={() => setMacroMetric(item.key)}
+                          className={`sop-btn px-2 py-0.5 text-[10px] flex-1 ${macroMetric === item.key ? "sop-btn-active" : ""}`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ width: '100%', height: 180 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={history} syncId="masterSync">
+                          <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="time"
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            tickFormatter={(t) => t.slice(11, 16)}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                          />
+                          <YAxis
+                            tick={{ fill: '#a4b596', fontSize: 9 }}
+                            stroke="rgba(164, 181, 150, 0.2)"
+                            domain={['auto', 'auto']}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#141810',
+                              borderColor: 'rgba(164, 181, 150, 0.4)',
+                              fontSize: '10px'
+                            }}
+                          />
+                          {macroMetric === "SHOCK" && (
+                            <ReferenceLine y={1.0} stroke="#d1e0c5" strokeDasharray="3 3" opacity={0.5} />
+                          )}
+                          <Area
+                            type="monotone"
+                            dataKey={currentMacroKey}
+                            stroke="#76c893"
+                            fill="rgba(118, 200, 147, 0.2)"
+                            strokeWidth={1.5}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SOP Footer */}
+          <div className="mt-6 pt-3 border-t border-[#a4b596]/30 flex flex-wrap items-center justify-between text-xs text-[#a4b596]/70">
+            <div>
+              SOP OPERATIONAL ENVIRONMENT // SECURE PROTOCOL ACTIVE // RECHARTS 2.12
+            </div>
+            <div className="font-bold text-[#d1e0c5]">
+              made by t <span className="cursor-blink">_</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<DashboardApp />);
+  </script>
+</body>
+</html>

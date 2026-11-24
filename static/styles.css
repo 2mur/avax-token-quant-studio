@@ -1,0 +1,247 @@
+/* Base variables (Dark Theme Default) */
+:root {
+    --bg-color: #1b1b1b;
+    --card-bg: #2a2a2a;
+    --block-bg: #1f1f1f;
+    --text-color: #ffffff;
+    --border-color: #555555;
+    --backdrop-bg: rgba(10, 10, 10, 0.9);
+    --crt-overlay: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+}
+
+/* Light Theme Overrides */
+[data-theme="light"] {
+    --bg-color: #e9ecef;
+    --card-bg: #ffffff;
+    --block-bg: #f8f9fa;
+    --text-color: #212529;
+    --border-color: #adb5bd;
+    --backdrop-bg: rgba(233, 236, 239, 0.95);
+    --crt-overlay: linear-gradient(rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.05) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+}
+
+/* Custom Minimal Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-color); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-color); }
+
+body {
+    margin: 0;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Roboto Mono', monospace;
+    -webkit-font-smoothing: antialiased; /* Force crisp font rendering */
+    -moz-osx-font-smoothing: grayscale;  
+    overflow-x: hidden;
+    line-height: 1.4;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* CRT Screen Effects */
+.crt-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: var(--crt-overlay);
+    background-size: 100% 3px, 3px 100%;
+    z-index: 999;
+    pointer-events: none;
+    animation: flicker 0.15s infinite;
+}
+
+@keyframes flicker {
+    /* Lowered opacity to prevent CRT lines from washing out text */
+    0% { opacity: 0.4; }
+    5% { opacity: 0.3; }
+    10% { opacity: 0.4; }
+    100% { opacity: 0.5; }
+}
+
+/* Typography */
+h1, h2, h3, h4, .gothic {
+    font-family: 'UnifrakturMaguntia', cursive;
+    font-weight: normal;
+    margin-top: 0;
+}
+
+h1 { 
+    text-align: left; 
+    font-size: 2rem; 
+    border-bottom: 1px solid var(--border-color); 
+    padding-bottom: 10px; 
+    margin-bottom: 20px;
+}
+
+.container {
+    max-width: 1800px;
+    width: 98%;
+    margin: 0 auto;
+    padding: 20px 0;
+    position: relative;
+    z-index: 10;
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 0;
+    background: var(--card-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 4px 10px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    z-index: 10;
+}
+.theme-toggle:hover {
+    border-color: var(--text-color);
+    background-color: var(--text-color);
+    color: var(--bg-color);
+}
+
+/* Initial Card Grid */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+    position: relative;
+}
+
+/* Card Component */
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.card:hover:not(.expanded) {
+    border-color: var(--text-color);
+    transform: translateY(-2px);
+}
+
+.card-placeholder { visibility: hidden; }
+
+/* Summary View (Small state) */
+.card-summary {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.card-summary h2 { margin-bottom: 5px; }
+.card-summary p { margin: 5px 0 0 0; font-size: 0.85rem; flex-grow: 1; }
+.card-summary .tech-specs {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-top: 15px;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 8px;
+}
+
+/* Expanded State */
+.card.expanded {
+    position: fixed;
+    top: 2vh;
+    left: 2vw;
+    width: 96vw;
+    height: 96vh;
+    z-index: 100;
+    cursor: default;
+    overflow-y: auto;
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    
+    /* Hardware acceleration to fix sub-pixel rendering blur */
+    transform: translateZ(0) scale(1.0); 
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+}
+
+.card.expanded .card-summary { display: none; }
+.card.expanded .card-details { display: flex; flex-direction: column; flex-grow: 1; padding: 20px 30px; opacity: 1; }
+.card-details { display: none; opacity: 0; }
+
+/* Dashboard Header */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+.dashboard-header h2 { font-size: 2.2rem; margin: 0; line-height: 1; }
+
+/* Minimize Button */
+.minimize-btn {
+    background: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    font-family: 'Roboto Mono', monospace;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.minimize-btn:hover {
+    border-color: var(--text-color);
+    background-color: var(--text-color);
+    color: var(--bg-color);
+}
+
+/* --- THE MULTI-COLUMN DASHBOARD LAYOUT --- */
+.dashboard-masonry {
+    column-count: 3;
+    column-gap: 20px;
+    width: 100%;
+}
+
+@media (max-width: 1400px) { .dashboard-masonry { column-count: 2; } }
+@media (max-width: 900px) { .dashboard-masonry { column-count: 1; } }
+
+/* Individual Content Blocks */
+.content-block {
+    background-color: var(--block-bg);
+    border: 1px solid var(--border-color);
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    break-inside: avoid; /* Prevents block from splitting across columns */
+    font-size: 0.9rem;
+}
+
+/* Markdown Styling inside Blocks */
+.content-block h2, .content-block h3 {
+    font-family: 'UnifrakturMaguntia', cursive;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 4px;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.5rem;
+}
+.content-block p { margin-top: 0; }
+.content-block ul { padding-left: 20px; margin-top: 5px; }
+.content-block li { margin-bottom: 6px; }
+.content-block code {
+    background-color: rgba(128, 128, 128, 0.15);
+    padding: 1px 4px;
+    font-size: 0.9em;
+}
+
+/* Background Dimmer */
+#backdrop {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: var(--backdrop-bg);
+    z-index: 0;
+    backdrop-filter: blur(5px);
+}
+#backdrop.active { display: block; }

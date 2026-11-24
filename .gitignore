@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# Large raw blockchain transfer CSVs (exceed GitHub 100MB limit; re-indexable via app)
+data/*.csv
+data/state.json.tmp
+
+# Per-token generated ML caches (re-generable from UI)
+dune-data/*/
+dune-databoards/*/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

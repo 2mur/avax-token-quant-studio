@@ -1,0 +1,28 @@
+{
+  "0xb8d7710f7d8349a506b75dd184f05777c82dad0c": {
+    "address": "0xB8d7710f7d8349A506b75dD184F05777c82dAd0C",
+    "symbol": "ARENA",
+    "name": "ArenaToken",
+    "first_tx_ts": 1723558975,
+    "last_tx_ts": 1735271134,
+    "last_block": 54937528,
+    "page_cursor": 1,
+    "collected_count": 973808,
+    "status": "PAUSED",
+    "csv_file": "ARENA_0xb8d771.csv",
+    "last_updated_ts": 1795495429
+  },
+  "0xacfb898cff266e53278cc0124fc2c7c94c8cb9a5": {
+    "address": "0xAcFb898Cff266E53278cC0124fC2C7C94C8cB9a5",
+    "symbol": "NOCHILL",
+    "name": "AVAX HAS NO CHILL",
+    "first_tx_ts": 1702878818,
+    "last_tx_ts": 1708244237,
+    "last_block": 41828267,
+    "page_cursor": 1,
+    "collected_count": 31962,
+    "status": "PAUSED",
+    "csv_file": "NOCHILL_0xacfb89.csv",
+    "last_updated_ts": 1795495965
+  }
+}

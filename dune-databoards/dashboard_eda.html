@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOP // FEATURE EDA ENGINE // NOCHILL-WAVAX</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18, ReactDOM, PropTypes, Recharts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX compilation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.4/babel.min.js"></script>
+
+  <style>
+    body {
+      background-color: #1e2418;
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace, ui-monospace;
+      overflow-x: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    .scanlines {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      pointer-events: none;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.28) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.02),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.02)
+      );
+      background-size: 100% 3px, 6px 100%;
+      z-index: 9999;
+      opacity: 0.65;
+    }
+    .glow-box {
+      background-color: rgba(20, 24, 16, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(164, 181, 150, 0.3);
+      box-shadow: 0 0 15px rgba(164, 181, 150, 0.04);
+      border-radius: 0px !important;
+    }
+    .glow-box:hover {
+      border-color: rgba(164, 181, 150, 0.6);
+      box-shadow: 0 0 20px rgba(164, 181, 150, 0.1);
+    }
+    .sop-btn {
+      background-color: rgba(20, 24, 16, 0.85);
+      border: 1px solid rgba(164, 181, 150, 0.35);
+      color: #a4b596;
+      font-family: 'Courier New', Courier, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-radius: 0px;
+      transition: all 0.15s ease-in-out;
+    }
+    .sop-btn:hover {
+      background-color: rgba(164, 181, 150, 0.15);
+      border-color: #d1e0c5;
+      color: #d1e0c5;
+    }
+    .sop-btn-active {
+      background-color: rgba(164, 181, 150, 0.25) !important;
+      border-color: #d1e0c5 !important;
+      color: #d1e0c5 !important;
+      box-shadow: inset 0 0 8px rgba(209, 224, 197, 0.25);
+    }
+    .cursor-blink {
+      animation: blink 1s step-start infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #141810;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(164, 181, 150, 0.35);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #a4b596;
+    }
+  </style>
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    const {
+      ResponsiveContainer, ComposedChart, LineChart, BarChart, AreaChart,
+      ScatterChart, Scatter, Line, Bar, Area, XAxis, YAxis, ZAxis, Tooltip,
+      Legend, CartesianGrid, ReferenceLine, Cell
+    } = window.Recharts;
+
+    const TABS = [
+      { id: "scatter", label: "[FEATURE VS RETURNS]" },
+      { id: "hist", label: "[FEATURE HISTOGRAMS]" },
+      { id: "pca", label: "[PCA EMBEDDINGS]" },
+      { id: "manifold", label: "[PHATE/UMAP EMBEDDINGS]" },
+      { id: "corr", label: "[CORRELATION]" },
+      { id: "pnl_bins", label: "[PNL BINS]" }
+    ];
+
+    function EdaDashboardApp() {
+      const [edaData, setEdaData] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      // Active Target & Tab
+      const [activeTab, setActiveTab] = useState("scatter");
+      const [activeTarget, setActiveTarget] = useState("future_return_1h");
+
+      // Tab 1 & 2: Selected Feature
+      const [selectedFeature, setSelectedFeature] = useState(null);
+      const [featureSearch, setFeatureSearch] = useState("");
+
+      // Tab 2: Histogram mode
+      const [histMode, setHistMode] = useState("GROUPED"); // STACKED or GROUPED
+
+      // Tab 3: PCA Filter
+      const [pcaFilter, setPcaFilter] = useState("ALL"); // ALL, BASE, VELOCITY
+      const [selectedPcaPair, setSelectedPcaPair] = useState(null);
+
+      // Tab 4: Manifold selection
+      const [selectedManifoldPair, setSelectedManifoldPair] = useState(null);
+
+      // Tab 5: Correlation profile target feature
+      const [corrFeature, setCorrFeature] = useState(null);
+
+      useEffect(() => {
+        setLoading(true);
+        fetch("eda_features.json")
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status} loading eda_features.json`);
+            return res.json();
+          })
+          .then((data) => {
+            setEdaData(data);
+            if (data.targets && data.targets.length > 0) {
+              setActiveTarget(data.targets[0]);
+            }
+            if (data.features && data.features.length > 0) {
+              setSelectedFeature(data.features[0]);
+              setCorrFeature(data.features[0]);
+            }
+            if (data.r2_groups) {
+              if (data.r2_groups.pca_base && data.r2_groups.pca_base.length > 0) {
+                setSelectedPcaPair(data.r2_groups.pca_base[0]);
+              }
+              if (data.r2_groups.umap_phate && data.r2_groups.umap_phate.length > 0) {
+                setSelectedManifoldPair(data.r2_groups.umap_phate[0]);
+              }
+            }
+            setLoading(false);
+          })
+          .catch((err) => {
+            console.error("EDA load error:", err);
+            setError(err.message);
+            setLoading(false);
+          });
+      }, []);
+
+      // Features ranked by robust_r2 for active target
+      const featuresRankedByR2 = useMemo(() => {
+        if (!edaData || !edaData.feature_metrics || !edaData.feature_metrics[activeTarget]) return [];
+        const metricsMap = edaData.feature_metrics[activeTarget];
+        const list = Object.keys(metricsMap).map((feat) => ({
+          name: feat,
+          ...metricsMap[feat]
+        }));
+        list.sort((a, b) => b.robust_r2 - a.robust_r2);
+        return list;
+      }, [edaData, activeTarget]);
+
+      // Features ranked by ANOVA p-value
+      const featuresRankedByAnova = useMemo(() => {
+        if (!edaData || !edaData.feature_metrics || !edaData.feature_metrics[activeTarget]) return [];
+        const metricsMap = edaData.feature_metrics[activeTarget];
+        const list = Object.keys(metricsMap).map((feat) => ({
+          name: feat,
+          ...metricsMap[feat]
+        }));
+        list.sort((a, b) => a.anova_p - b.anova_p);
+        return list;
+      }, [edaData, activeTarget]);
+
+      // Filtered feature list for search
+      const filteredFeatures = useMemo(() => {
+        const base = activeTab === "hist" ? featuresRankedByAnova : featuresRankedByR2;
+        if (!featureSearch.trim()) return base;
+        const q = featureSearch.toLowerCase();
+        return base.filter((f) => f.name.toLowerCase().includes(q));
+      }, [featuresRankedByR2, featuresRankedByAnova, featureSearch, activeTab]);
+
+      // Current Feature Metrics for Active Target
+      const currentMetrics = useMemo(() => {
+        if (!edaData || !edaData.feature_metrics || !edaData.feature_metrics[activeTarget] || !selectedFeature) {
+          return { robust_r2: 0, r2: 0, mi: 0, anova_p: 1, pos_mean: 0, pos_var: 0, neg_mean: 0, neg_var: 0 };
+        }
+        return edaData.feature_metrics[activeTarget][selectedFeature] || {};
+      }, [edaData, activeTarget, selectedFeature]);
+
+      // Scatter Data split into Pos vs Neg Target Returns
+      const scatterSplitData = useMemo(() => {
+        if (!edaData || !edaData.scatter_data || !selectedFeature) return { pos: [], neg: [] };
+        const pos = [];
+        const neg = [];
+        edaData.scatter_data.forEach((row) => {
+          const x = row[selectedFeature];
+          const y = row[activeTarget];
+          if (x !== undefined && y !== undefined) {
+            const item = { x: Number(x), y: Number(y), time: row.time, price: row.price };
+            if (y > 0) pos.push(item);
+            else neg.push(item);
+          }
+        });
+        return { pos, neg };
+      }, [edaData, selectedFeature, activeTarget]);
+
+      // Histogram Data for current feature & target
+      const currentHistData = useMemo(() => {
+        if (!edaData || !edaData.hist_data || !edaData.hist_data[activeTarget] || !selectedFeature) return [];
+        return edaData.hist_data[activeTarget][selectedFeature] || [];
+      }, [edaData, activeTarget, selectedFeature]);
+
+      // Filtered PCA Pairs
+      const displayedPcaPairs = useMemo(() => {
+        if (!edaData || !edaData.r2_groups) return [];
+        const base = edaData.r2_groups.pca_base || [];
+        const vel = edaData.r2_groups.pca_velocity || [];
+        let combined = [];
+        if (pcaFilter === "ALL") combined = [...base, ...vel];
+        else if (pcaFilter === "BASE") combined = [...base];
+        else combined = [...vel];
+        combined.sort((a, b) => b.r2 - a.r2);
+        return combined;
+      }, [edaData, pcaFilter]);
+
+      // PCA Scatter Plot Data
+      const pcaScatterData = useMemo(() => {
+        if (!edaData || !edaData.scatter_data || !selectedPcaPair) return [];
+        return edaData.scatter_data.map((row) => ({
+          x: row[selectedPcaPair.f1],
+          y: row[selectedPcaPair.f2],
+          target: row[activeTarget],
+          time: row.time
+        }));
+      }, [edaData, selectedPcaPair, activeTarget]);
+
+      // Manifold Scatter Plot Data
+      const manifoldScatterData = useMemo(() => {
+        if (!edaData || !edaData.scatter_data || !selectedManifoldPair) return [];
+        return edaData.scatter_data.map((row) => ({
+          x: row[selectedManifoldPair.f1],
+          y: row[selectedManifoldPair.f2],
+          target: row[activeTarget],
+          time: row.time,
+          price: row.price
+        }));
+      }, [edaData, selectedManifoldPair, activeTarget]);
+
+      // Correlation Profile Data for selected corrFeature
+      const corrProfileData = useMemo(() => {
+        if (!edaData || !edaData.correlation_matrix || !corrFeature) return [];
+        const row = edaData.correlation_matrix[corrFeature] || {};
+        const entries = Object.entries(row)
+          .filter(([k]) => k !== corrFeature)
+          .map(([feat, val]) => ({
+            feature: feat,
+            correlation: val,
+            abs_corr: Math.abs(val)
+          }));
+        entries.sort((a, b) => b.abs_corr - a.abs_corr);
+        return entries.slice(0, 20); // Top 20 correlated
+      }, [edaData, corrFeature]);
+
+      return (
+        <div className="min-h-screen bg-[#1e2418] text-[#a4b596] p-4 flex flex-col justify-between">
+          <div>
+            {/* Header Bar */}
+            <div className="glow-box p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                <span className="inline-block w-3 h-3 bg-[#76c893] shadow-[0_0_8px_#76c893]"></span>
+                <span className="text-[#d1e0c5] font-bold tracking-wider text-sm md:text-base">
+                  SOP // FEATURE EDA ENGINE // NOCHILL-WAVAX
+                </span>
+                <span className="text-xs text-[#a4b596]/60 border border-[#a4b596]/30 px-2 py-0.5">
+                  ANALYSIS RUNTIME ACTIVE
+                </span>
+              </div>
+
+              {/* Navigation Links */}
+              <div className="flex items-center space-x-2 text-xs">
+                <span className="text-[#a4b596]/50">TERMINALS:</span>
+                <a href="dashboard.html" className="sop-btn px-2.5 py-1 text-xs">
+                  PERFORMANCE
+                </a>
+                <a href="dashboard_feat_ts.html" className="sop-btn px-2.5 py-1 text-xs">
+                  FEATURES TS
+                </a>
+                <a href="dashboard_eda.html" className="sop-btn sop-btn-active px-2.5 py-1 text-xs">
+                  EDA ENGINE
+                </a>
+              </div>
+            </div>
+
+            {/* Target Selector & Navigation Tabs */}
+            <div className="glow-box p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
+              {/* Target Horizon Dropdown */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-[#d1e0c5] tracking-wider">TARGET HORIZON:</span>
+                <select
+                  value={activeTarget}
+                  onChange={(e) => setActiveTarget(e.target.value)}
+                  className="bg-[#141810] border border-[#a4b596]/40 text-[#d1e0c5] text-xs px-2.5 py-1 font-mono outline-none focus:border-[#d1e0c5]"
+                >
+                  {edaData?.targets?.map((tgt) => (
+                    <option key={tgt} value={tgt}>
+                      {tgt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 6 Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`sop-btn px-2.5 py-1 text-xs font-bold ${activeTab === t.id ? "sop-btn-active" : ""}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="glow-box p-12 text-center text-sm tracking-widest text-[#d1e0c5]">
+                INITIALIZING MULTI-VARIATE STATISTICAL EDA ENGINES...
+              </div>
+            ) : error ? (
+              <div className="glow-box p-8 text-center text-sm text-[#f87171]">
+                ANALYSIS ERROR: {error}
+              </div>
+            ) : (
+              <div>
+                {/* TAB 1: FEATURE VS RETURNS */}
+                {activeTab === "scatter" && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    {/* Left Sidebar: Features Ranked by Robust R2 */}
+                    <div className="glow-box p-3 flex flex-col h-[520px]">
+                      <div className="text-xs font-bold text-[#d1e0c5] mb-2 pb-1 border-b border-[#a4b596]/30 flex justify-between items-center">
+                        <span>RANKED BY ROBUST R²</span>
+                        <span className="text-[10px] text-[#a4b596]/60">{filteredFeatures.length} FEATS</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Filter feature..."
+                        value={featureSearch}
+                        onChange={(e) => setFeatureSearch(e.target.value)}
+                        className="bg-[#141810] border border-[#a4b596]/30 text-[#d1e0c5] text-xs px-2 py-1 mb-2 font-mono outline-none focus:border-[#d1e0c5]"
+                      />
+                      <div className="overflow-y-auto flex-1 pr-1 space-y-1">
+                        {filteredFeatures.map((f) => (
+                          <div
+                            key={f.name}
+                            onClick={() => setSelectedFeature(f.name)}
+                            className={`p-1.5 cursor-pointer text-xs flex justify-between items-center border border-transparent transition-all ${
+                              selectedFeature === f.name
+                                ? "bg-[#a4b596]/20 border-[#d1e0c5] text-[#d1e0c5]"
+                                : "hover:bg-[#a4b596]/10 text-[#a4b596]"
+                            }`}
+                          >
+                            <span className="truncate mr-2 font-mono text-[11px]">{f.name}</span>
+                            <span className="font-mono text-[10px] text-[#76c893] whitespace-nowrap">
+                              {(f.robust_r2 * 100).toFixed(2)}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right Main Panel: Scatter Plot + Readouts */}
+                    <div className="glow-box p-4 lg:col-span-3 flex flex-col justify-between h-[520px]">
+                      {/* Metric Readout Banner */}
+                      <div className="grid grid-cols-3 gap-3 mb-3 p-2 bg-[#141810] border border-[#a4b596]/30">
+                        <div className="text-center">
+                          <div className="text-[10px] text-[#a4b596]/70 uppercase">MUTUAL INFO</div>
+                          <div className="text-base font-bold text-[#d1e0c5] mt-0.5">
+                            {currentMetrics.mi?.toFixed(4) || "0.0000"}
+                          </div>
+                        </div>
+                        <div className="text-center border-x border-[#a4b596]/20">
+                          <div className="text-[10px] text-[#a4b596]/70 uppercase">STANDARD R²</div>
+                          <div className="text-base font-bold text-[#d1e0c5] mt-0.5">
+                            {currentMetrics.r2?.toFixed(4) || "0.0000"}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] text-[#a4b596]/70 uppercase">ROBUST R² (TRIMMED)</div>
+                          <div className="text-base font-bold text-[#76c893] mt-0.5">
+                            {currentMetrics.robust_r2?.toFixed(4) || "0.0000"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Scatter Chart */}
+                      <div className="flex-1" style={{ minHeight: 380 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 20 }}>
+                            <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={selectedFeature}
+                              tick={{ fill: '#a4b596', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name={activeTarget}
+                              tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                              tickFormatter={(v) => `${(v * 100).toFixed(1)}%`}
+                            />
+                            <ZAxis range={[25, 25]} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#141810',
+                                borderColor: 'rgba(164, 181, 150, 0.4)',
+                                fontSize: '10px'
+                              }}
+                              formatter={(value, name) => [value, name === 'y' ? activeTarget : selectedFeature]}
+                            />
+                            <ReferenceLine y={0} stroke="#d1e0c5" strokeDasharray="3 3" opacity={0.4} />
+                            {/* Positive Target Split */}
+                            <Scatter
+                              name="Target > 0"
+                              data={scatterSplitData.pos}
+                              fill="#76c893"
+                              opacity={0.75}
+                            />
+                            {/* Negative Target Split */}
+                            <Scatter
+                              name="Target <= 0"
+                              data={scatterSplitData.neg}
+                              fill="#f87171"
+                              opacity={0.75}
+                            />
+                            <Legend
+                              wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: FEATURE HISTOGRAMS */}
+                {activeTab === "hist" && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    {/* Left Sidebar: Ranked by Kruskal-Wallis p-value */}
+                    <div className="glow-box p-3 flex flex-col h-[520px]">
+                      <div className="text-xs font-bold text-[#d1e0c5] mb-2 pb-1 border-b border-[#a4b596]/30 flex justify-between items-center">
+                        <span>RANKED BY KRUSKAL ANOVA P</span>
+                        <span className="text-[10px] text-[#a4b596]/60">{filteredFeatures.length} FEATS</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Filter feature..."
+                        value={featureSearch}
+                        onChange={(e) => setFeatureSearch(e.target.value)}
+                        className="bg-[#141810] border border-[#a4b596]/30 text-[#d1e0c5] text-xs px-2 py-1 mb-2 font-mono outline-none focus:border-[#d1e0c5]"
+                      />
+                      <div className="overflow-y-auto flex-1 pr-1 space-y-1">
+                        {filteredFeatures.map((f) => (
+                          <div
+                            key={f.name}
+                            onClick={() => setSelectedFeature(f.name)}
+                            className={`p-1.5 cursor-pointer text-xs flex justify-between items-center border border-transparent transition-all ${
+                              selectedFeature === f.name
+                                ? "bg-[#a4b596]/20 border-[#d1e0c5] text-[#d1e0c5]"
+                                : "hover:bg-[#a4b596]/10 text-[#a4b596]"
+                            }`}
+                          >
+                            <span className="truncate mr-2 font-mono text-[11px]">{f.name}</span>
+                            <span className="font-mono text-[10px] text-[#d1e0c5] whitespace-nowrap">
+                              p={f.anova_p < 0.001 ? "<0.001" : f.anova_p.toFixed(3)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right Main Panel: Histogram + Stats */}
+                    <div className="glow-box p-4 lg:col-span-3 flex flex-col justify-between h-[520px]">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div className="text-xs font-bold text-[#d1e0c5]">
+                          1%-TRIMMED HISTOGRAM: {selectedFeature} ({activeTarget})
+                        </div>
+                        {/* Stacked vs Grouped Toggle */}
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-xs text-[#a4b596]/60">MODE:</span>
+                          <button
+                            onClick={() => setHistMode("GROUPED")}
+                            className={`sop-btn px-2.5 py-0.5 text-xs ${histMode === "GROUPED" ? "sop-btn-active" : ""}`}
+                          >
+                            GROUPED
+                          </button>
+                          <button
+                            onClick={() => setHistMode("STACKED")}
+                            className={`sop-btn px-2.5 py-0.5 text-xs ${histMode === "STACKED" ? "sop-btn-active" : ""}`}
+                          >
+                            STACKED
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Trimmed Pos/Neg Mean & Variance Stats */}
+                      <div className="grid grid-cols-4 gap-2 mb-3 p-2 bg-[#141810] border border-[#a4b596]/30 text-center">
+                        <div>
+                          <div className="text-[10px] text-[#76c893] uppercase font-bold">POS MEAN</div>
+                          <div className="text-xs font-mono text-[#d1e0c5] mt-0.5">{currentMetrics.pos_mean?.toFixed(4)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-[#76c893] uppercase font-bold">POS VAR</div>
+                          <div className="text-xs font-mono text-[#d1e0c5] mt-0.5">{currentMetrics.pos_var?.toFixed(4)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-[#f87171] uppercase font-bold">NEG MEAN</div>
+                          <div className="text-xs font-mono text-[#d1e0c5] mt-0.5">{currentMetrics.neg_mean?.toFixed(4)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-[#f87171] uppercase font-bold">NEG VAR</div>
+                          <div className="text-xs font-mono text-[#d1e0c5] mt-0.5">{currentMetrics.neg_var?.toFixed(4)}</div>
+                        </div>
+                      </div>
+
+                      {/* Histogram Bar Chart */}
+                      <div className="flex-1" style={{ minHeight: 340 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={currentHistData}>
+                            <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                            <XAxis
+                              dataKey="range"
+                              tick={{ fill: '#a4b596', fontSize: 9 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              angle={-25}
+                              textAnchor="end"
+                              height={45}
+                            />
+                            <YAxis
+                              tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#141810',
+                                borderColor: 'rgba(164, 181, 150, 0.4)',
+                                fontSize: '10px'
+                              }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
+                            <Bar
+                              dataKey="pos"
+                              name="Target > 0"
+                              fill="#76c893"
+                              stackId={histMode === "STACKED" ? "a" : undefined}
+                              opacity={0.8}
+                            />
+                            <Bar
+                              dataKey="neg"
+                              name="Target <= 0"
+                              fill="#f87171"
+                              stackId={histMode === "STACKED" ? "a" : undefined}
+                              opacity={0.8}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: PCA EMBEDDINGS */}
+                {activeTab === "pca" && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    {/* Left Sidebar: PCA Pairwise List (Strictly Isolated Base vs Velocity) */}
+                    <div className="glow-box p-3 flex flex-col h-[520px]">
+                      <div className="text-xs font-bold text-[#d1e0c5] mb-2 pb-1 border-b border-[#a4b596]/30 flex justify-between items-center">
+                        <span>PAIRWISE PCA PAIRS</span>
+                        <span className="text-[10px] text-[#a4b596]/60">STRICT ISOLATION</span>
+                      </div>
+
+                      {/* Filter Buttons */}
+                      <div className="flex gap-1 mb-2">
+                        {["ALL", "BASE", "VELOCITY"].map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => setPcaFilter(mode)}
+                            className={`sop-btn px-2 py-0.5 text-[10px] flex-1 ${pcaFilter === mode ? "sop-btn-active" : ""}`}
+                          >
+                            [{mode}]
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="overflow-y-auto flex-1 pr-1 space-y-1">
+                        {displayedPcaPairs.map((p, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedPcaPair(p)}
+                            className={`p-2 cursor-pointer text-xs flex justify-between items-center border border-transparent transition-all ${
+                              selectedPcaPair?.label === p.label
+                                ? "bg-[#a4b596]/20 border-[#d1e0c5] text-[#d1e0c5]"
+                                : "hover:bg-[#a4b596]/10 text-[#a4b596]"
+                            }`}
+                          >
+                            <span className="font-mono text-[11px] font-semibold">{p.label}</span>
+                            <span className="font-mono text-[10px] text-[#76c893]">
+                              R²: {p.r2.toFixed(4)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right Main Panel: Pairwise Scatter Projection */}
+                    <div className="glow-box p-4 lg:col-span-3 flex flex-col justify-between h-[520px]">
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#a4b596]/30">
+                        <div>
+                          <span className="text-xs font-bold text-[#d1e0c5]">
+                            {selectedPcaPair?.label || "PCA PAIR SCATTER"}
+                          </span>
+                          <span className="text-[11px] text-[#76c893] ml-3 font-mono">
+                            PAIRWISE R² = {selectedPcaPair?.r2?.toFixed(6)}
+                          </span>
+                        </div>
+                        <span className="text-[10px] border border-[#a4b596]/40 px-2 py-0.5 text-[#d1e0c5]">
+                          CATEGORY: [{selectedPcaPair?.group}]
+                        </span>
+                      </div>
+
+                      <div className="flex-1" style={{ minHeight: 420 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                            <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={selectedPcaPair?.f1}
+                              tick={{ fill: '#a4b596', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name={selectedPcaPair?.f2}
+                              tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                            />
+                            <ZAxis range={[30, 30]} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#141810',
+                                borderColor: 'rgba(164, 181, 150, 0.4)',
+                                fontSize: '10px'
+                              }}
+                            />
+                            <Scatter
+                              name="Samples"
+                              data={pcaScatterData}
+                              fill="#85b09a"
+                              opacity={0.8}
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 4: PHATE/UMAP EMBEDDINGS */}
+                {activeTab === "manifold" && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    {/* Left Sidebar: Manifold Projections */}
+                    <div className="glow-box p-3 flex flex-col h-[520px]">
+                      <div className="text-xs font-bold text-[#d1e0c5] mb-2 pb-1 border-b border-[#a4b596]/30">
+                        3D MANIFOLD PROJECTIONS
+                      </div>
+                      <div className="overflow-y-auto flex-1 pr-1 space-y-1">
+                        {edaData?.r2_groups?.umap_phate?.map((p, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedManifoldPair(p)}
+                            className={`p-2 cursor-pointer text-xs flex justify-between items-center border border-transparent transition-all ${
+                              selectedManifoldPair?.label === p.label
+                                ? "bg-[#a4b596]/20 border-[#d1e0c5] text-[#d1e0c5]"
+                                : "hover:bg-[#a4b596]/10 text-[#a4b596]"
+                            }`}
+                          >
+                            <span className="font-mono text-[11px] font-semibold">{p.label}</span>
+                            <span className="font-mono text-[10px] text-[#76c893]">
+                              R²: {p.r2.toFixed(4)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Right Main Panel: 2D Projection */}
+                    <div className="glow-box p-4 lg:col-span-3 flex flex-col justify-between h-[520px]">
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#a4b596]/30">
+                        <div>
+                          <span className="text-xs font-bold text-[#d1e0c5]">
+                            {selectedManifoldPair?.label || "2D MANIFOLD PROJECTION"}
+                          </span>
+                          <span className="text-[11px] text-[#76c893] ml-3 font-mono">
+                            PROJECTION R² = {selectedManifoldPair?.r2?.toFixed(6)}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-[#a4b596]/70">
+                          PROJECTION EMBEDDING: {selectedManifoldPair?.group}
+                        </span>
+                      </div>
+
+                      <div className="flex-1" style={{ minHeight: 420 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                            <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                            <XAxis
+                              type="number"
+                              dataKey="x"
+                              name={selectedManifoldPair?.f1}
+                              tick={{ fill: '#a4b596', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="y"
+                              name={selectedManifoldPair?.f2}
+                              tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              domain={['auto', 'auto']}
+                            />
+                            <ZAxis range={[35, 35]} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#141810',
+                                borderColor: 'rgba(164, 181, 150, 0.4)',
+                                fontSize: '10px'
+                              }}
+                            />
+                            <Scatter
+                              name="Manifold Points"
+                              data={manifoldScatterData}
+                              fill="#76c893"
+                              opacity={0.8}
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 5: CORRELATION & REDUNDANT ALERTS */}
+                {activeTab === "corr" && (
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    {/* Left Sidebar: Redundant Alert (> 0.85) */}
+                    <div className="glow-box p-3 flex flex-col h-[520px]">
+                      <div className="text-xs font-bold text-[#f87171] mb-2 pb-1 border-b border-[#f87171]/40 flex justify-between items-center">
+                        <span>REDUNDANT ALERT (&gt;0.85)</span>
+                        <span className="text-[10px] text-[#f87171]/80">
+                          {edaData?.redundant_pairs?.length || 0} PAIRS
+                        </span>
+                      </div>
+                      <div className="overflow-y-auto flex-1 pr-1 space-y-1.5">
+                        {edaData?.redundant_pairs?.length === 0 ? (
+                          <div className="text-xs text-[#a4b596]/50 p-3">NO REDUNDANT PAIRS FOUND</div>
+                        ) : (
+                          edaData?.redundant_pairs?.map((rp, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setCorrFeature(rp.feature1)}
+                              className="p-1.5 bg-[#f87171]/5 border border-[#f87171]/20 hover:border-[#f87171]/50 cursor-pointer text-xs"
+                            >
+                              <div className="flex justify-between items-center text-[11px] font-bold text-[#d1e0c5]">
+                                <span className="truncate">{rp.feature1}</span>
+                                <span className="text-[#f87171] font-mono ml-1">{rp.correlation.toFixed(3)}</span>
+                              </div>
+                              <div className="text-[10px] text-[#a4b596]/60 truncate mt-0.5">
+                                ↔ {rp.feature2}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Main Panel: Horizontal Correlation Profile */}
+                    <div className="glow-box p-4 lg:col-span-3 flex flex-col justify-between h-[520px]">
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-2 mb-2 border-b border-[#a4b596]/30">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-[#d1e0c5]">CORRELATION PROFILE FOR:</span>
+                          <select
+                            value={corrFeature || ""}
+                            onChange={(e) => setCorrFeature(e.target.value)}
+                            className="bg-[#141810] border border-[#a4b596]/40 text-[#d1e0c5] text-xs px-2 py-0.5 font-mono outline-none focus:border-[#d1e0c5]"
+                          >
+                            {edaData?.features?.map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <span className="text-[10px] text-[#a4b596]/70">TOP 20 ABSOLUTE CORRELATIONS</span>
+                      </div>
+
+                      <div className="flex-1" style={{ minHeight: 420 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            layout="vertical"
+                            data={corrProfileData}
+                            margin={{ top: 10, right: 30, left: 140, bottom: 10 }}
+                          >
+                            <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                            <XAxis
+                              type="number"
+                              domain={[-1, 1]}
+                              tick={{ fill: '#a4b596', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                            />
+                            <YAxis
+                              type="category"
+                              dataKey="feature"
+                              tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                              stroke="rgba(164, 181, 150, 0.3)"
+                              width={130}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#141810',
+                                borderColor: 'rgba(164, 181, 150, 0.4)',
+                                fontSize: '10px'
+                              }}
+                            />
+                            <ReferenceLine x={0} stroke="#d1e0c5" opacity={0.5} />
+                            <ReferenceLine x={0.85} stroke="#f87171" strokeDasharray="2 2" opacity={0.7} />
+                            <ReferenceLine x={-0.85} stroke="#f87171" strokeDasharray="2 2" opacity={0.7} />
+                            <Bar dataKey="correlation" name="Correlation">
+                              {corrProfileData.map((entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={
+                                    Math.abs(entry.correlation) > 0.85
+                                      ? "#f87171"
+                                      : entry.correlation >= 0
+                                      ? "#76c893"
+                                      : "#85b09a"
+                                  }
+                                />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 6: PNL COHORT BINS */}
+                {activeTab === "pnl_bins" && (
+                  <div className="glow-box p-4 h-[520px] flex flex-col justify-between">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#a4b596]/30">
+                      <div>
+                        <span className="text-xs font-bold text-[#d1e0c5]">
+                          100% STACKED PNL COHORT MIGRATION OVER TIME
+                        </span>
+                        <span className="text-[11px] text-[#a4b596]/70 ml-3">
+                          COHORT SENTIMENT TRANSITIONS VS TOKEN PRICE
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-3 text-[11px]">
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-2.5 bg-[#f87171]"></span>
+                          <span>HEAVY LOSS</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-2.5 bg-[#e07a5f]"></span>
+                          <span>MOD LOSS</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-2.5 bg-[#a4b596]"></span>
+                          <span>EVEN</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-2.5 bg-[#85b09a]"></span>
+                          <span>MOD PROFIT</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <span className="w-2.5 h-2.5 bg-[#76c893]"></span>
+                          <span>HEAVY PROFIT</span>
+                        </span>
+                        <span className="flex items-center space-x-1 ml-2">
+                          <span className="w-3 h-0.5 bg-[#d1e0c5]"></span>
+                          <span className="text-[#d1e0c5] font-bold">PRICE ($)</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1" style={{ minHeight: 420 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={edaData?.bin_timeline || []}>
+                          <CartesianGrid stroke="rgba(164, 181, 150, 0.1)" strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="time"
+                            tick={{ fill: '#a4b596', fontSize: 10 }}
+                            tickFormatter={(t) => t.slice(5, 10)}
+                            stroke="rgba(164, 181, 150, 0.3)"
+                          />
+                          <YAxis
+                            yAxisId="binAxis"
+                            tick={{ fill: '#a4b596', fontSize: 10 }}
+                            stroke="rgba(164, 181, 150, 0.3)"
+                            domain={[0, 100]}
+                            tickFormatter={(v) => `${v}%`}
+                          />
+                          <YAxis
+                            yAxisId="priceAxis"
+                            orientation="right"
+                            tick={{ fill: '#d1e0c5', fontSize: 10 }}
+                            stroke="rgba(209, 224, 197, 0.3)"
+                            domain={['auto', 'auto']}
+                            tickFormatter={(p) => `$${p.toFixed(4)}`}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: '#141810',
+                              borderColor: 'rgba(164, 181, 150, 0.4)',
+                              fontSize: '10px'
+                            }}
+                          />
+                          <Area
+                            yAxisId="binAxis"
+                            type="monotone"
+                            dataKey="bin_heavy_loss"
+                            stackId="1"
+                            name="Heavy Loss"
+                            stroke="#f87171"
+                            fill="#f87171"
+                            opacity={0.7}
+                          />
+                          <Area
+                            yAxisId="binAxis"
+                            type="monotone"
+                            dataKey="bin_moderate_loss"
+                            stackId="1"
+                            name="Moderate Loss"
+                            stroke="#e07a5f"
+                            fill="#e07a5f"
+                            opacity={0.7}
+                          />
+                          <Area
+                            yAxisId="binAxis"
+                            type="monotone"
+                            dataKey="bin_breakeven"
+                            stackId="1"
+                            name="Breakeven"
+                            stroke="#a4b596"
+                            fill="#a4b596"
+                            opacity={0.7}
+                          />
+                          <Area
+                            yAxisId="binAxis"
+                            type="monotone"
+                            dataKey="bin_moderate_profit"
+                            stackId="1"
+                            name="Moderate Profit"
+                            stroke="#85b09a"
+                            fill="#85b09a"
+                            opacity={0.7}
+                          />
+                          <Area
+                            yAxisId="binAxis"
+                            type="monotone"
+                            dataKey="bin_heavy_profit"
+                            stackId="1"
+                            name="Heavy Profit"
+                            stroke="#76c893"
+                            fill="#76c893"
+                            opacity={0.7}
+                          />
+                          <Line
+                            yAxisId="priceAxis"
+                            type="monotone"
+                            dataKey="price"
+                            name="Price"
+                            stroke="#d1e0c5"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* SOP Footer */}
+          <div className="mt-6 pt-3 border-t border-[#a4b596]/30 flex flex-wrap items-center justify-between text-xs text-[#a4b596]/70">
+            <div>
+              SOP STATISTICAL INFERENCE // CORRELATION & MANIFOLD DECOMPOSITION // RECHARTS 2.12
+            </div>
+            <div className="font-bold text-[#d1e0c5]">
+              made by t <span className="cursor-blink">_</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<EdaDashboardApp />);
+  </script>
+</body>
+</html>
